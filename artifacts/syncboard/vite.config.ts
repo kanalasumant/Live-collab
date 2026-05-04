@@ -66,6 +66,15 @@ export default defineConfig({
     fs: {
       strict: true,
     },
+    proxy: {
+      '/socket.io': {
+        target: 'http://localhost:8080',
+        ws: true,
+      },
+      '/api': {
+        target: 'http://localhost:8080',
+      },
+    }
   },
   preview: {
     port,
