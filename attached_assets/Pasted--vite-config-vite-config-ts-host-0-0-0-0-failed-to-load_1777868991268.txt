@@ -1,0 +1,17 @@
+> vite --config vite.config.ts --host 0.0.0.0
+
+failed to load config from /home/kanalasumant/Documents/draw-collaboration/Ask-And-Plan/artifacts/syncboard/vite.config.ts
+error when starting dev server:
+Error: PORT environment variable is required but was not provided.
+    at file:///home/kanalasumant/Documents/draw-collaboration/Ask-And-Plan/artifacts/syncboard/node_modules/.vite-temp/vite.config.ts.timestamp-1777868874770-14f42557b86088.mjs:10:9
+    at ModuleJob.run (node:internal/modules/esm/module_job:437:25)
+    at async node:internal/modules/esm/loader:639:26
+    at async loadConfigFromBundledFile (file:///home/kanalasumant/Documents/draw-collaboration/Ask-And-Plan/node_modules/.pnpm/vite@7.3.2_@types+node@25.3.5_jiti@2.6.1_lightningcss@1.31.1_tsx@4.21.0_yaml@2.8.2/node_modules/vite/dist/node/chunks/config.js:35920:12)
+    at async bundleAndLoadConfigFile (file:///home/kanalasumant/Documents/draw-collaboration/Ask-And-Plan/node_modules/.pnpm/vite@7.3.2_@types+node@25.3.5_jiti@2.6.1_lightningcss@1.31.1_tsx@4.21.0_yaml@2.8.2/node_modules/vite/dist/node/chunks/config.js:35808:17)
+    at async loadConfigFromFile (file:///home/kanalasumant/Documents/draw-collaboration/Ask-And-Plan/node_modules/.pnpm/vite@7.3.2_@types+node@25.3.5_jiti@2.6.1_lightningcss@1.31.1_tsx@4.21.0_yaml@2.8.2/node_modules/vite/dist/node/chunks/config.js:35775:42)
+    at async resolveConfig (file:///home/kanalasumant/Documents/draw-collaboration/Ask-And-Plan/node_modules/.pnpm/vite@7.3.2_@types+node@25.3.5_jiti@2.6.1_lightningcss@1.31.1_tsx@4.21.0_yaml@2.8.2/node_modules/vite/dist/node/chunks/config.js:35424:22)
+    at async _createServer (file:///home/kanalasumant/Documents/draw-collaboration/Ask-And-Plan/node_modules/.pnpm/vite@7.3.2_@types+node@25.3.5_jiti@2.6.1_lightningcss@1.31.1_tsx@4.21.0_yaml@2.8.2/node_modules/vite/dist/node/chunks/config.js:25365:67)
+    at async CAC.<anonymous> (file:///home/kanalasumant/Documents/draw-collaboration/Ask-And-Plan/node_modules/.pnpm/vite@7.3.2_@types+node@25.3.5_jiti@2.6.1_lightningcss@1.31.1_tsx@4.21.0_yaml@2.8.2/node_modules/vite/dist/node/cli.js:572:18)
+/home/kanalasumant/Documents/draw-collaboration/Ask-And-Plan/artifacts/syncboard:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @workspace/syncboard@0.0.0 dev: `vite --config vite.config.ts --host 0.0.0.0`
+Exit status 1
