@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useApp } from "@/context/AppContext";
 import EditMode from "@/components/EditMode/EditMode";
 
@@ -22,20 +22,29 @@ export default function Sidebar({
   setSelectedObjId,
 }: SidebarProps) {
   const {
-    userName, roomUsers,
+    userName, roomName, roomUsers,
     mode, setMode,
     tool, setTool,
     strokeColor, setStrokeColor,
     strokeWidth, setStrokeWidth,
   } = useApp();
   const [showUsersPopup, setShowUsersPopup] = useState(false);
+  const popupTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleUsersMouseEnter = () => {
+    if (popupTimeoutRef.current) clearTimeout(popupTimeoutRef.current);
+    setShowUsersPopup(true);
+  };
+  const handleUsersMouseLeave = () => {
+    popupTimeoutRef.current = setTimeout(() => setShowUsersPopup(false), 150);
+  };
 
   const handleSwitchMode = (newMode: typeof mode) => {
     setMode(newMode);
   };
 
   return (
-    <aside className="w-[100px] bg-card border-r border-border flex flex-col h-full shrink-0 overflow-hidden">
+    <aside className="w-[100px] bg-card border-r border-border flex flex-col h-full shrink-0">
       {/* Part 1: Title */}
       <div className="px-2 pt-4 pb-3 flex items-center justify-center shrink-0">
         <span className="text-primary font-bold text-xs text-center leading-tight">Live Collab</span>
@@ -43,12 +52,20 @@ export default function Sidebar({
 
       <hr className="border-border mx-2 shrink-0" />
 
+      {/* Part 1.5: Room name */}
+      <div className="px-2 py-2.5 flex flex-col items-center shrink-0">
+        <span className="text-[9px] text-muted-foreground uppercase tracking-wide font-semibold">Room name</span>
+        <span className="text-[10px] font-bold text-foreground text-center leading-tight mt-0.5 break-all w-full text-center">{roomName}</span>
+      </div>
+
+      <hr className="border-border mx-2 shrink-0" />
+
       {/* Part 2: Active Users */}
-      <div className="px-2 py-3 flex flex-col items-center relative shrink-0">
+      <div className="px-2 py-3 flex flex-col items-center shrink-0" style={{ position: "relative", zIndex: 50 }}>
         <div
           className="flex flex-col items-center gap-1 cursor-pointer select-none"
-          onMouseEnter={() => setShowUsersPopup(true)}
-          onMouseLeave={() => setShowUsersPopup(false)}
+          onMouseEnter={handleUsersMouseEnter}
+          onMouseLeave={handleUsersMouseLeave}
         >
           <div className="flex items-center gap-1">
             <svg className="w-3.5 h-3.5 text-primary" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -60,7 +77,12 @@ export default function Sidebar({
         </div>
 
         {showUsersPopup && (
-          <div className="absolute left-full top-0 ml-2 z-50 bg-card border border-border rounded-lg shadow-lg px-3 py-2 min-w-[140px]">
+          <div
+            className="bg-white border border-border rounded-lg shadow-xl px-3 py-2 min-w-[150px]"
+            style={{ position: "fixed", left: 108, zIndex: 9999 }}
+            onMouseEnter={handleUsersMouseEnter}
+            onMouseLeave={handleUsersMouseLeave}
+          >
             <p className="text-[10px] text-muted-foreground font-semibold mb-1.5 uppercase tracking-wide">In this room</p>
             {roomUsers.map((u) => (
               <p key={u} className={`text-xs py-0.5 ${u === userName ? "font-bold text-foreground" : "text-muted-foreground"}`}>

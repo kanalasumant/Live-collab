@@ -257,7 +257,8 @@ export default function Canvas() {
       if (!obj) return;
       const pos = getCanvasPos(e);
       const bb = getBoundingBox(obj);
-      if (pos.x >= bb.x && pos.x <= bb.x + bb.w && pos.y >= bb.y && pos.y <= bb.y + bb.h) {
+      const insideBB = pos.x >= bb.x && pos.x <= bb.x + bb.w && pos.y >= bb.y && pos.y <= bb.y + bb.h;
+      if (insideBB) {
         isDraggingObjRef.current = true;
         if (obj.type === "path" && obj.points) {
           const minX = Math.min(...obj.points.map((p) => p.x));
@@ -266,6 +267,15 @@ export default function Canvas() {
         } else {
           dragOffsetRef.current = { dx: pos.x - (obj.x ?? 0), dy: pos.y - (obj.y ?? 0) };
         }
+      } else {
+        // Click outside bounding box — deselect and unlock
+        if (lockedId) {
+          socket?.emit("unlock_object", { id: lockedId });
+          const lockedObj = objects.get(lockedId);
+          if (lockedObj) upsertObject(lockedId, { ...lockedObj, isLock: false, lockedBy: undefined });
+        }
+        setLockedId(null);
+        setSelectedObjId(null);
       }
     };
     const onMove = (e: MouseEvent) => {
@@ -305,7 +315,7 @@ export default function Canvas() {
       cvs.removeEventListener("mousemove", onMove);
       cvs.removeEventListener("mouseup", onUp);
     };
-  }, [selectedObjId, objects, upsertObject, socket, getCanvasPos]);
+  }, [selectedObjId, lockedId, objects, upsertObject, socket, getCanvasPos, setLockedId, setSelectedObjId]);
 
   // ── drawing events ─────────────────────────────────────────
   useEffect(() => {
