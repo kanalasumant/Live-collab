@@ -16,16 +16,17 @@ export default function Home() {
   const [, navigate] = useLocation();
 
   const [rooms, setRooms] = useState<RoomInfo[]>([]);
+  const [roomsLoading, setRoomsLoading] = useState(true);
   const [newRoomName, setNewRoomName] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingMsg, setLoadingMsg] = useState("");
-  const [totalRooms, setTotalRooms] = useState(0);
 
   useEffect(() => {
     if (!socket) return;
 
     const onRoomsList = (data: { rooms: RoomInfo[] }) => {
       setRooms(data.rooms);
+      setRoomsLoading(false);
     };
 
     const onRoomCreated = (data: { roomName: string; userName: string; objects: { id: string; data: any }[]; users: string[] }) => {
@@ -75,16 +76,6 @@ export default function Home() {
     };
   }, [socket, navigate, setUserName, setRoomName, setObjects, setRoomUsers]);
 
-  useEffect(() => {
-    if (!socket) return;
-    const onRoomsList = (data: { rooms: RoomInfo[] }) => {
-      const allRoomsCount = data.rooms.length;
-      setTotalRooms(allRoomsCount);
-    };
-    socket.on("rooms_list", onRoomsList);
-    return () => { socket.off("rooms_list", onRoomsList); };
-  }, [socket]);
-
   const handleCreateRoom = () => {
     if (!socket || !newRoomName.trim()) return;
     setLoadingMsg("Creating room…");
@@ -99,7 +90,7 @@ export default function Home() {
     socket.emit("join_room", { roomName });
   };
 
-  const maxRoomsReached = totalRooms >= 5;
+  const maxRoomsReached = rooms.length >= 5;
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -112,29 +103,44 @@ export default function Home() {
       <div className="flex-1 flex items-center justify-center px-4">
         <div className="bg-card border border-border rounded-2xl shadow-sm w-full max-w-lg p-8">
 
-          {/* Available Rooms */}
+          {/* All Rooms */}
           <section className="mb-6">
-            <h2 className="text-xl font-semibold text-foreground text-center mb-4">Available Rooms</h2>
-            {rooms.length === 0 ? (
-              <p className="text-center text-muted-foreground text-sm py-4">No rooms available right now.</p>
+            <h2 className="text-xl font-semibold text-foreground text-center mb-4">All Rooms</h2>
+
+            {roomsLoading ? (
+              <div className="flex flex-col items-center gap-2 py-6">
+                <div className="w-6 h-6 border-[3px] border-primary border-t-transparent rounded-full animate-spin"></div>
+                <p className="text-sm text-muted-foreground">Loading rooms…</p>
+              </div>
+            ) : rooms.length === 0 ? (
+              <p className="text-center text-muted-foreground text-sm py-4">No rooms yet. Create one below!</p>
             ) : (
               <div className="flex flex-col gap-3">
-                {rooms.map((room) => (
-                  <button
-                    key={room.name}
-                    onClick={() => handleJoinRoom(room.name)}
-                    disabled={loading}
-                    className="flex items-center justify-between border border-border rounded-xl px-5 py-3.5 hover:border-primary hover:bg-accent transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <span className="flex items-center gap-2 font-medium text-foreground">
-                      <span className="w-2 h-2 rounded-full bg-green-500 inline-block"></span>
-                      {room.name}
-                    </span>
-                    <span className="text-sm text-muted-foreground">
-                      {room.spots} spot{room.spots !== 1 ? "s" : ""} available
-                    </span>
-                  </button>
-                ))}
+                {rooms.map((room) => {
+                  const full = room.spots === 0;
+                  return (
+                    <button
+                      key={room.name}
+                      onClick={() => !full && handleJoinRoom(room.name)}
+                      disabled={loading || full}
+                      className={`flex items-center justify-between border rounded-xl px-5 py-3.5 transition-all text-left
+                        ${full
+                          ? "border-border bg-background opacity-50 cursor-not-allowed"
+                          : "border-border hover:border-primary hover:bg-accent cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                        }`}
+                    >
+                      <span className="flex items-center gap-2 font-medium text-foreground">
+                        <span className={`w-2 h-2 rounded-full inline-block ${full ? "bg-muted-foreground" : "bg-green-500"}`}></span>
+                        {room.name}
+                      </span>
+                      <span className={`text-sm ${full ? "text-destructive font-medium" : "text-muted-foreground"}`}>
+                        {full
+                          ? "0 spots available"
+                          : `${room.spots} spot${room.spots !== 1 ? "s" : ""} available`}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             )}
           </section>

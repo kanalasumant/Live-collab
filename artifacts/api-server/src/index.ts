@@ -52,19 +52,17 @@ const rooms = new Map<string, RoomInfo>();
 const userNames = new Map<string, string>();
 const userRooms = new Map<string, string>();
 
-function getAvailableRooms() {
+function getAllRooms() {
   const list: { name: string; spots: number; userCount: number }[] = [];
   for (const [name, info] of rooms) {
     const spots = MAX_USERS_PER_ROOM - info.users.size;
-    if (spots > 0) {
-      list.push({ name, spots, userCount: info.users.size });
-    }
+    list.push({ name, spots, userCount: info.users.size });
   }
   return list;
 }
 
 function broadcastRoomsList() {
-  io.emit("rooms_list", { rooms: getAvailableRooms() });
+  io.emit("rooms_list", { rooms: getAllRooms() });
 }
 
 function getObjectsAsArray(roomName: string) {
@@ -116,7 +114,7 @@ function leaveRoom(socketId: string) {
 }
 
 io.on("connection", (socket) => {
-  socket.emit("rooms_list", { rooms: getAvailableRooms() });
+  socket.emit("rooms_list", { rooms: getAllRooms() });
 
   socket.on("create_room", ({ roomName }: { roomName: string }) => {
     if (rooms.size >= MAX_ROOMS) {
@@ -247,6 +245,18 @@ io.on("connection", (socket) => {
     if (!obj) return;
     obj.isDrawing = false;
     socket.to(roomName).emit("text_update", { id, data: obj });
+  });
+
+  socket.on("text_box_move", ({ id, x, y }: { id: string; x: number; y: number }) => {
+    const roomName = userRooms.get(socket.id);
+    if (!roomName) return;
+    const room = rooms.get(roomName);
+    if (!room) return;
+    const obj = room.objects.get(id);
+    if (!obj) return;
+    obj.x = x;
+    obj.y = y;
+    socket.to(roomName).emit("text_box_preview", { id, data: obj });
   });
 
   socket.on("lock_request", ({ id }: { id: string }) => {

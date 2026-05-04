@@ -57,6 +57,14 @@ function redrawCanvas(ctx: CanvasRenderingContext2D, objects: Map<string, Shared
   }
 }
 
+interface ActiveTextBox {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export default function Canvas() {
   const { socket } = useSocket();
   const {
@@ -82,8 +90,14 @@ export default function Canvas() {
   const isDraggingTextRef = useRef(false);
   const textStartRef = useRef<{ x: number; y: number } | null>(null);
 
-  const [activeTextBox, setActiveTextBox] = useState<{ id: string; x: number; y: number; w: number; h: number } | null>(null);
+  const [activeTextBox, setActiveTextBox] = useState<ActiveTextBox | null>(null);
   const [textValue, setTextValue] = useState("");
+  const activeTextBoxRef = useRef<ActiveTextBox | null>(null);
+  const activeTextBoxDivRef = useRef<HTMLDivElement | null>(null);
+  const isDraggingActiveTextRef = useRef(false);
+  const textBoxDragStartRef = useRef<{ mouseX: number; mouseY: number; boxX: number; boxY: number } | null>(null);
+  // ref-mirror of textValue for use inside event handlers without stale closures
+  const textValueRef = useRef("");
 
   const [hoveredObjId, setHoveredObjId] = useState<string | null>(null);
   const [selectedObjId, setSelectedObjId] = useState<string | null>(null);
@@ -92,6 +106,10 @@ export default function Canvas() {
 
   const isDraggingObjRef = useRef(false);
   const dragOffsetRef = useRef<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
+
+  // Keep refs in sync with state
+  useEffect(() => { activeTextBoxRef.current = activeTextBox; }, [activeTextBox]);
+  useEffect(() => { textValueRef.current = textValue; }, [textValue]);
 
   const getCanvasPos = useCallback((e: MouseEvent | React.MouseEvent): { x: number; y: number } => {
     const canvas = ogCanvasRef.current;
@@ -110,6 +128,7 @@ export default function Canvas() {
 
     const onPathUpdate = ({ id, data }: { id: string; data: SharedObject }) => upsertObject(id, data);
     const onTextUpdate = ({ id, data }: { id: string; data: SharedObject }) => upsertObject(id, data);
+    const onTextBoxPreview = ({ id, data }: { id: string; data: SharedObject }) => upsertObject(id, data);
     const onObjectLocked = ({ id, lockedBy }: { id: string; lockedBy: string }) => {
       upsertObject(id, { ...(objects.get(id)!), isLock: true, lockedBy });
     };
@@ -125,6 +144,7 @@ export default function Canvas() {
       setSelectedObjId(null);
       setLockedId(null);
       setActiveTextBox(null);
+      setTextValue("");
     };
     const onUserJoined = ({ userName: name }: { userName: string }) => {
       setRoomUsers((prev) => (prev.includes(name) ? prev : [...prev, name]));
@@ -155,6 +175,7 @@ export default function Canvas() {
 
     socket.on("path_update", onPathUpdate);
     socket.on("text_update", onTextUpdate);
+    socket.on("text_box_preview", onTextBoxPreview);
     socket.on("object_locked", onObjectLocked);
     socket.on("object_unlocked", onObjectUnlocked);
     socket.on("object_moved", onObjectMoved);
@@ -167,6 +188,7 @@ export default function Canvas() {
     return () => {
       socket.off("path_update", onPathUpdate);
       socket.off("text_update", onTextUpdate);
+      socket.off("text_box_preview", onTextBoxPreview);
       socket.off("object_locked", onObjectLocked);
       socket.off("object_unlocked", onObjectUnlocked);
       socket.off("object_moved", onObjectMoved);
@@ -205,8 +227,9 @@ export default function Canvas() {
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    redrawCanvas(ctx, objects, selectedObjId ?? undefined);
-  }, [objects, selectedObjId]);
+    // skip both the edit-selected object AND the active text box being typed
+    redrawCanvas(ctx, objects, selectedObjId ?? activeTextBox?.id ?? undefined);
+  }, [objects, selectedObjId, activeTextBox]);
 
   // ── temp highlight canvas ──────────────────────────────────
   useEffect(() => {
@@ -247,7 +270,7 @@ export default function Canvas() {
     ctx.restore();
   }, [hoveredObjId, selectedObjId, objects]);
 
-  // ── temp canvas drag listeners ─────────────────────────────
+  // ── temp canvas drag listeners (edit mode) ─────────────────
   useEffect(() => {
     const cvs = tempCanvasRef.current;
     if (!cvs || !selectedObjId) return;
@@ -317,12 +340,55 @@ export default function Canvas() {
     };
   }, [selectedObjId, lockedId, objects, upsertObject, socket, getCanvasPos, setLockedId, setSelectedObjId]);
 
+  // ── document-level drag for active text box ────────────────
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      if (!isDraggingActiveTextRef.current || !textBoxDragStartRef.current) return;
+      const dx = e.clientX - textBoxDragStartRef.current.mouseX;
+      const dy = e.clientY - textBoxDragStartRef.current.mouseY;
+      const newX = textBoxDragStartRef.current.boxX + dx;
+      const newY = textBoxDragStartRef.current.boxY + dy;
+      setActiveTextBox((prev) => prev ? { ...prev, x: newX, y: newY } : null);
+      const box = activeTextBoxRef.current;
+      if (box) socket?.emit("text_box_move", { id: box.id, x: newX, y: newY });
+    };
+    const onMouseUp = () => {
+      isDraggingActiveTextRef.current = false;
+      textBoxDragStartRef.current = null;
+    };
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+  }, [socket]);
+
+  // ── commit text box on click outside ──────────────────────
+  useEffect(() => {
+    if (!activeTextBox) return;
+    const container = containerRef.current;
+    if (!container) return;
+    const onDown = (e: MouseEvent) => {
+      if (isDraggingActiveTextRef.current) return;
+      const div = activeTextBoxDivRef.current;
+      if (div && div.contains(e.target as Node)) return;
+      // clicked outside → commit
+      commitActiveTextBox();
+    };
+    container.addEventListener("mousedown", onDown);
+    return () => container.removeEventListener("mousedown", onDown);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTextBox]);
+
   // ── drawing events ─────────────────────────────────────────
   useEffect(() => {
     const canvas = ogCanvasRef.current;
     if (!canvas || mode !== "draw") return;
 
     const onDown = (e: MouseEvent) => {
+      // Suppress drawing while a text box is being positioned/typed
+      if (activeTextBoxRef.current) return;
       const pos = getCanvasPos(e);
       if (tool === "freehand") {
         isDrawingRef.current = true;
@@ -385,7 +451,13 @@ export default function Canvas() {
         const w = Math.max(Math.abs(pos.x - textStartRef.current.x), 80);
         const h = Math.max(Math.abs(pos.y - textStartRef.current.y), 40);
         textStartRef.current = null;
-        if (w > 10 && h > 10) setActiveTextBox({ id: "", x, y, w, h });
+        if (w > 10 && h > 10) {
+          const id = generateId();
+          // Register on server immediately so server map + other users see it
+          socket?.emit("text_start", { id, x, y, width: w, height: h, fontSize: 16, color: "#000000" });
+          setActiveTextBox({ id, x, y, w, h });
+          setTextValue("");
+        }
       }
     };
 
@@ -428,33 +500,51 @@ export default function Canvas() {
     setSelectedObjId(null);
     setLockedId(null);
     setActiveTextBox(null);
+    setTextValue("");
   };
 
-  // ── text block commit ──────────────────────────────────────
-  const handleTextDone = () => {
-    if (!activeTextBox || !socket || !textValue.trim()) {
+  // ── commit active text box ─────────────────────────────────
+  const commitActiveTextBox = () => {
+    const box = activeTextBoxRef.current;
+    const text = textValueRef.current;
+    if (!box || !socket) {
       setActiveTextBox(null);
       setTextValue("");
       return;
     }
-    const id = generateId();
+    if (!text.trim()) {
+      // No content — remove from server
+      socket.emit("delete_object", { id: box.id });
+      setActiveTextBox(null);
+      setTextValue("");
+      return;
+    }
     const obj: SharedObject = {
       isDrawing: false, isLock: false, type: "text",
-      x: activeTextBox.x, y: activeTextBox.y,
-      width: activeTextBox.w, height: activeTextBox.h,
-      text: textValue, fontSize: 16, color: "#000000",
+      x: box.x, y: box.y,
+      width: box.w, height: box.h,
+      text, fontSize: 16, color: "#000000",
     };
-    upsertObject(id, obj);
-    socket.emit("text_start", { id, x: obj.x, y: obj.y, width: obj.width, height: obj.height, fontSize: obj.fontSize, color: obj.color });
-    socket.emit("text_update", { id, text: textValue, x: obj.x, y: obj.y, width: obj.width, height: obj.height, fontSize: obj.fontSize, color: obj.color });
-    socket.emit("text_end", { id });
+    socket.emit("text_update", { id: box.id, text, x: box.x, y: box.y, width: box.w, height: box.h, fontSize: 16, color: "#000000" });
+    socket.emit("text_end", { id: box.id });
+    upsertObject(box.id, obj);
     setActiveTextBox(null);
     setTextValue("");
   };
 
+  // ── start dragging the text box border ─────────────────────
+  const startTextBoxDrag = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const box = activeTextBoxRef.current;
+    if (!box) return;
+    isDraggingActiveTextRef.current = true;
+    textBoxDragStartRef.current = { mouseX: e.clientX, mouseY: e.clientY, boxX: box.x, boxY: box.y };
+  };
+
   return (
     <div className="flex h-screen overflow-hidden bg-background">
-      {/* Sidebar (100px wide, full height) */}
+      {/* Sidebar */}
       <Sidebar
         onClearBoard={handleClearBoard}
         lockedId={lockedId}
@@ -475,25 +565,97 @@ export default function Canvas() {
             className="bg-white block"
           />
 
-          {/* Text textarea overlay */}
+          {/* Draggable text box overlay (active while typing/positioning) */}
           {activeTextBox && (
-            <textarea
-              autoFocus
-              value={textValue}
-              onChange={(e) => setTextValue(e.target.value)}
-              onBlur={handleTextDone}
-              onKeyDown={(e) => { if (e.key === "Escape") { setActiveTextBox(null); setTextValue(""); } }}
+            <div
+              ref={activeTextBoxDivRef}
               style={{
                 position: "absolute",
-                left: activeTextBox.x, top: activeTextBox.y,
-                width: activeTextBox.w, height: activeTextBox.h,
-                zIndex: 20, border: "1.5px dashed #6366f1",
-                background: "rgba(255,255,255,0.92)", resize: "none",
-                outline: "none", padding: "4px", fontSize: 16,
-                fontFamily: "Inter, sans-serif", lineHeight: "1.4", color: "#000",
+                left: activeTextBox.x,
+                top: activeTextBox.y,
+                width: activeTextBox.w,
+                height: activeTextBox.h,
+                zIndex: 20,
               }}
-              placeholder="Type here…"
-            />
+            >
+              {/* Dotted border — drag handle */}
+              <div
+                onMouseDown={startTextBoxDrag}
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  border: "1.5px dashed #6366f1",
+                  cursor: "move",
+                  zIndex: 1,
+                  boxSizing: "border-box",
+                }}
+              />
+
+              {/* Textarea for typing (stops propagation so it doesn't trigger border drag) */}
+              <textarea
+                autoFocus
+                value={textValue}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setTextValue(val);
+                  const box = activeTextBoxRef.current;
+                  if (box && socket) {
+                    socket.emit("text_update", {
+                      id: box.id, text: val,
+                      x: box.x, y: box.y,
+                      width: box.w, height: box.h,
+                      fontSize: 16, color: "#000000",
+                    });
+                  }
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    const box = activeTextBoxRef.current;
+                    if (box && socket) socket.emit("delete_object", { id: box.id });
+                    setActiveTextBox(null);
+                    setTextValue("");
+                  }
+                }}
+                placeholder="Type here…"
+                style={{
+                  position: "absolute",
+                  inset: 2,
+                  width: "calc(100% - 4px)",
+                  height: "calc(100% - 4px)",
+                  background: "rgba(255,255,255,0.92)",
+                  resize: "none",
+                  outline: "none",
+                  padding: "4px",
+                  fontSize: 16,
+                  fontFamily: "Inter, sans-serif",
+                  lineHeight: "1.4",
+                  color: "#000",
+                  cursor: "text",
+                  border: "none",
+                  boxSizing: "border-box",
+                  zIndex: 2,
+                }}
+              />
+
+              {/* Drag handle pill above the box */}
+              <div
+                onMouseDown={startTextBoxDrag}
+                title="Drag to reposition"
+                style={{
+                  position: "absolute",
+                  top: -14,
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  background: "#6366f1",
+                  borderRadius: 4,
+                  width: 36,
+                  height: 8,
+                  cursor: "move",
+                  zIndex: 3,
+                }}
+              />
+            </div>
           )}
         </div>
       </div>
